@@ -1,60 +1,34 @@
 # UI/history_panel.py
 """
-历史记录与成长曲线面板
-展示学生历次面试得分趋势 + 各维度雷达图
+历史记录与成长曲线面板 — 重构版
+使用统一组件库 UI/components.py 主题色彩
 """
 import json
 import math
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QComboBox, QTextEdit, QSplitter, QFrame, QGraphicsDropShadowEffect,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QComboBox, QTextEdit, QFrame, QGraphicsDropShadowEffect,
 )
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPainter, QPen, QBrush, QColor, QFont, QPolygonF, QLinearGradient, QPainterPath
-from PySide6.QtCore import QPointF
+from PySide6.QtCore import Qt, QPointF
+from PySide6.QtGui import (
+    QPainter, QPen, QBrush, QColor, QFont,
+    QPolygonF, QLinearGradient, QPainterPath,
+)
 
-from UI.base_panel import PanelFrame
-
-APPLE_COLORS = {
-    "bg": "#F2F2F7",
-    "surface": "#FFFFFF",
-    "blue": "#007AFF",
-    "blue_trans": QColor(0, 122, 255, 40),
-    "green": "#34C759",
-    "text_main": "#1C1C1E",
-    "text_sec": "#8E8E93",
-    "border": "#D1D1D6",
-    "shadow": QColor(0, 0, 0, 25)
-}
-
-FONT_STACK = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif'
-# ── 辅助组件：阴影卡片 ────────────────────────────────────────────────────────
-class ShadowCard(QFrame):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setStyleSheet(f"""
-            QFrame {{
-                background: white; 
-                color: {APPLE_COLORS['text_main']};
-                border-radius: 16px;
-                border: 1px solid {APPLE_COLORS['border']};
-            }}
-        """)
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(20)
-        shadow.setColor(APPLE_COLORS['shadow'])
-        shadow.setOffset(0, 4)
-        self.setGraphicsEffect(shadow)
+from UI.components import (
+    Theme as T, ButtonFactory, GLOBAL_QSS, combo_qss,
+)
 
 
-# ── 现代成长曲线图 (Area Chart) ────────────────────────────────────────────────
+# ── 折线面积图 ────────────────────────────────────────────────────────────────
 
 class GrowthChart(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.scores: list[float] = []
-        self.setMinimumSize(400, 250)
+        self.setMinimumSize(380, 220)
+        self.setStyleSheet("background: transparent;")
 
     def set_scores(self, scores: list[float]):
         self.scores = scores
@@ -65,63 +39,78 @@ class GrowthChart(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
 
         W, H = self.width(), self.height()
-        PAD_L, PAD_R, PAD_T, PAD_B = 40, 20, 40, 30
-        cw, ch = W - PAD_L - PAD_R, H - PAD_T - PAD_B
+        PL, PR, PT, PB = 38, 16, 30, 28
+        cw, ch = W - PL - PR, H - PT - PB
 
         if not self.scores:
-            p.setPen(QColor(APPLE_COLORS['text_sec']))
+            p.setPen(QColor(T.TEXT_DIM))
+            p.setFont(QFont(T.FONT, 13))
             p.drawText(self.rect(), Qt.AlignCenter, "暂无面试记录")
             return
 
-        # 1. 绘制网格线
-        p.setPen(QPen(QColor("#E5E5EA"), 1))
+        # 网格线
+        p.setPen(QPen(QColor(T.BORDER2), 1))
         for i in range(6):
-            y = PAD_T + ch * (1 - i / 5)
-            p.drawLine(PAD_L, y, W - PAD_R, y)
-            p.drawText(5, y + 5, str(i * 2))
+            y = PT + ch * (1 - i / 5)
+            p.drawLine(PL, int(y), W - PR, int(y))
+            p.setPen(QColor(T.TEXT_MUTE))
+            p.setFont(QFont(T.FONT_MONO, 8))
+            p.drawText(2, int(y) + 4, str(i * 2))
+            p.setPen(QPen(QColor(T.BORDER2), 1))
 
-        # 2. 计算点位
-        points = []
-        step = cw / (len(self.scores) - 1) if len(self.scores) > 1 else cw / 2
-        for i, s in enumerate(self.scores):
-            x = PAD_L + i * step if len(self.scores) > 1 else PAD_L + cw / 2
-            y = PAD_T + ch * (1 - s / 10)
-            points.append(QPointF(x, y))
+        # 计算坐标点
+        n = len(self.scores)
+        step = cw / (n - 1) if n > 1 else cw / 2
+        points = [
+            QPointF(PL + i * step if n > 1 else PL + cw / 2,
+                    PT + ch * (1 - s / 10))
+            for i, s in enumerate(self.scores)
+        ]
 
-        # 3. 绘制填充渐变 (Area)
+        # 面积填充
         if len(points) > 1:
-            path_fill = QPainterPath()
-            path_fill.moveTo(points[0].x(), PAD_T + ch)
-            for pt in points: path_fill.lineTo(pt)
-            path_fill.lineTo(points[-1].x(), PAD_T + ch)
+            path = QPainterPath()
+            path.moveTo(points[0].x(), PT + ch)
+            for pt in points:
+                path.lineTo(pt)
+            path.lineTo(points[-1].x(), PT + ch)
 
-            grad = QLinearGradient(0, PAD_T, 0, PAD_T + ch)
-            grad.setColorAt(0, APPLE_COLORS['blue_trans'])
-            grad.setColorAt(1, QColor(0, 122, 255, 0))
-            p.fillPath(path_fill, QBrush(grad))
+            grad = QLinearGradient(0, PT, 0, PT + ch)
+            grad.setColorAt(0, QColor(T.NEON).lighter(120))
+            grad.setColorAt(0, QColor(0, 212, 255, 50))
+            grad.setColorAt(1, QColor(0, 212, 255, 0))
+            p.fillPath(path, QBrush(grad))
 
-        # 4. 绘制折线
-        p.setPen(QPen(QColor(APPLE_COLORS['blue']), 3, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        # 折线
+        neon = QColor(T.NEON)
+        p.setPen(QPen(neon, 2.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         for i in range(len(points) - 1):
             p.drawLine(points[i], points[i + 1])
 
-        # 5. 绘制圆点
-        p.setPen(Qt.NoPen)
-        p.setBrush(QColor(APPLE_COLORS['blue']))
+        # 节点
         for pt in points:
+            p.setPen(Qt.NoPen)
+            p.setBrush(neon)
             p.drawEllipse(pt, 5, 5)
-            p.setBrush(Qt.white)
-            p.drawEllipse(pt, 2, 2)
-            p.setBrush(QColor(APPLE_COLORS['blue']))
+            p.setBrush(QColor(T.SURFACE))
+            p.drawEllipse(pt, 2.5, 2.5)
+            p.setBrush(neon)
+
+        # X 轴标签
+        p.setPen(QColor(T.TEXT_MUTE))
+        p.setFont(QFont(T.FONT, 8))
+        for i, pt in enumerate(points):
+            p.drawText(int(pt.x()) - 8, H - 4, f"#{i + 1}")
 
 
-# ── 现代雷达图 ──────────────────────────────────────────────────────────────
+# ── 雷达图 ────────────────────────────────────────────────────────────────────
 
 class RadarChart(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.data = {}
-        self.setMinimumSize(300, 300)
+        self.data: dict = {}
+        self.setMinimumSize(260, 260)
+        self.setStyleSheet("background: transparent;")
 
     def set_data(self, data: dict):
         self.data = data
@@ -133,49 +122,75 @@ class RadarChart(QWidget):
 
         W, H = self.width(), self.height()
         cx, cy = W / 2, H / 2
-        r = min(cx, cy) - 50
+        r = min(cx, cy) - 44
 
         if not self.data:
+            p.setPen(QColor(T.TEXT_DIM))
             p.drawText(self.rect(), Qt.AlignCenter, "等待数据...")
             return
 
         cats = list(self.data.keys())
         n = len(cats)
-        angle_step = 2 * math.pi / n
+        step = 2 * math.pi / n
 
-        # 1. 绘制背景多边形 (蜘蛛网)
-        p.setPen(QPen(QColor("#E5E5EA"), 1))
+        # 蜘蛛网
+        p.setPen(QPen(QColor(T.BORDER2), 1))
         for level in range(1, 6):
             cur_r = r * (level / 5)
-            pts = [QPointF(cx + cur_r * math.cos(i * angle_step - math.pi / 2),
-                           cy + cur_r * math.sin(i * angle_step - math.pi / 2)) for i in range(n)]
-            p.drawPolygon(QPolygonF(pts))
+            pts = [QPointF(cx + cur_r * math.cos(i * step - math.pi / 2),
+                           cy + cur_r * math.sin(i * step - math.pi / 2)) for i in range(n)]
+            p.drawPolygon(QPolygonF(pts + [pts[0]]))
 
-        # 2. 绘制轴线与文字
-        p.setFont(QFont(FONT_STACK, 10, QFont.Bold))
+        # 轴线和标签
+        p.setPen(QPen(QColor(T.BORDER2), 1))
+        p.setFont(QFont(T.FONT, 10, QFont.Bold))
+        p.setPen(QColor(T.TEXT_DIM))
         for i, cat in enumerate(cats):
-            angle = i * angle_step - math.pi / 2
-            end_x, end_y = cx + r * math.cos(angle), cy + r * math.sin(angle)
-            p.drawLine(cx, cy, end_x, end_y)
+            angle = i * step - math.pi / 2
+            ex, ey = cx + r * math.cos(angle), cy + r * math.sin(angle)
+            p.setPen(QPen(QColor(T.BORDER2), 1))
+            p.drawLine(int(cx), int(cy), int(ex), int(ey))
+            tx, ty = cx + (r + 22) * math.cos(angle), cy + (r + 22) * math.sin(angle)
+            p.setPen(QColor(T.TEXT_DIM))
+            fm = p.fontMetrics()
+            bw = fm.horizontalAdvance(cat)
+            p.drawText(int(tx - bw / 2), int(ty + 4), cat)
 
-            # 文字坐标微调
-            tx, ty = cx + (r + 25) * math.cos(angle), cy + (r + 25) * math.sin(angle)
-            rect = p.fontMetrics().boundingRect(cat)
-            p.drawText(tx - rect.width() / 2, ty + rect.height() / 4, cat)
-
-        # 3. 绘制数据区域
-        data_pts = [QPointF(cx + r * (self.data[cat] / 10) * math.cos(i * angle_step - math.pi / 2),
-                            cy + r * (self.data[cat] / 10) * math.sin(i * angle_step - math.pi / 2))
-                    for i, cat in enumerate(cats)]
-
-        poly = QPolygonF(data_pts)
-        p.setPen(QPen(QColor(APPLE_COLORS['blue']), 2))
-        p.setBrush(APPLE_COLORS['blue_trans'])
+        # 数据区域
+        data_pts = [
+            QPointF(cx + r * (self.data.get(cat, 0) / 10) * math.cos(i * step - math.pi / 2),
+                    cy + r * (self.data.get(cat, 0) / 10) * math.sin(i * step - math.pi / 2))
+            for i, cat in enumerate(cats)
+        ]
+        poly = QPolygonF(data_pts + [data_pts[0]])
+        p.setPen(QPen(QColor(T.NEON), 2))
+        p.setBrush(QColor(0, 212, 255, 35))
         p.drawPolygon(poly)
 
-        # 4. 绘制数据点
-        p.setBrush(QColor(APPLE_COLORS['blue']))
-        for pt in data_pts: p.drawEllipse(pt, 4, 4)
+        # 数据点
+        p.setBrush(QColor(T.NEON))
+        p.setPen(Qt.NoPen)
+        for pt in data_pts:
+            p.drawEllipse(pt, 4, 4)
+
+
+# ── 暗色卡片 ──────────────────────────────────────────────────────────────────
+
+class DarkCard(QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(f"""
+            QFrame {{
+                background: {T.SURFACE};
+                border: 1px solid {T.BORDER};
+                border-radius: 12px;
+            }}
+        """)
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(18)
+        shadow.setColor(QColor(0, 0, 0, 80))
+        shadow.setOffset(0, 4)
+        self.setGraphicsEffect(shadow)
 
 
 # ── 主面板 ────────────────────────────────────────────────────────────────────
@@ -187,83 +202,117 @@ class HistoryPanel(QWidget):
         self._init_ui()
 
     def _init_ui(self):
-        self.setStyleSheet(f"background-color: {APPLE_COLORS['bg']}; font-family: {FONT_STACK};")
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(30, 25, 30, 25)
-        layout.setSpacing(25)
+        self.setStyleSheet(GLOBAL_QSS + combo_qss())
 
-        # ── 顶部筛选栏 ──
-        header = QHBoxLayout()
-        title_lbl = QLabel("成长实验室")
-        title_lbl.setStyleSheet(f"font-size: 24px; font-weight: 800; color: {APPLE_COLORS['text_main']};")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        layout.addWidget(self._build_header())
+
+        # 主内容区
+        content = QWidget()
+        content.setStyleSheet(f"background: {T.BG};")
+        c_lay = QVBoxLayout(content)
+        c_lay.setContentsMargins(26, 20, 26, 20)
+        c_lay.setSpacing(18)
+
+        c_lay.addLayout(self._build_charts())
+        c_lay.addWidget(self._build_report(), stretch=1)
+        layout.addWidget(content, stretch=1)
+
+    def _build_header(self) -> QFrame:
+        header = QFrame()
+        header.setFixedHeight(58)
+        header.setStyleSheet(f"""
+            QFrame {{
+                background: {T.SURFACE};
+                border-bottom: 1px solid {T.BORDER};
+            }}
+        """)
+        lay = QHBoxLayout(header)
+        lay.setContentsMargins(26, 0, 26, 0)
+        lay.setSpacing(12)
+
+        title = QLabel("📊  成长实验室")
+        title.setStyleSheet(f"font-size: 16px; font-weight: 800; color: {T.TEXT}; font-family: {T.FONT};")
+
+        member_lbl = QLabel("成员")
+        member_lbl.setStyleSheet(f"color: {T.TEXT_DIM}; font-size: 12px;")
 
         self.student_combo = QComboBox()
-        self.student_combo.setFixedWidth(180)
-        self.student_combo.setStyleSheet(f"""
-            QComboBox {{
-                background: green; border-radius: 10px; padding: 6px 12px;
-                border: 1px solid {APPLE_COLORS['border']}; font-size: 14px;
-            }}
-        """)
+        self.student_combo.setFixedSize(160, 34)
 
-        refresh_btn = QPushButton("同步数据")
-        refresh_btn.setFixedSize(90, 32)
-        refresh_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {APPLE_COLORS['blue']}; color: white; border-radius: 8px; font-weight: 600;
-            }}
-            QPushButton:hover {{ opacity: 0.8; }}
-        """)
-        refresh_btn.clicked.connect(self._refresh)
+        sync_btn = ButtonFactory.solid("同步数据", T.NEON, height=34)
+        sync_btn.setFixedWidth(90)
+        sync_btn.clicked.connect(self._refresh)
 
-        header.addWidget(title_lbl)
-        header.addStretch()
-        header.addWidget(QLabel("选择成员:"))
-        header.addWidget(self.student_combo)
-        header.addWidget(refresh_btn)
-        layout.addLayout(header)
+        lay.addWidget(title)
+        lay.addStretch()
+        lay.addWidget(member_lbl)
+        lay.addWidget(self.student_combo)
+        lay.addWidget(sync_btn)
 
-        # ── 图表区域 ──
-        charts_layout = QHBoxLayout()
+        self.student_combo.currentIndexChanged.connect(self._load_student_data)
+        return header
 
-        # 左侧卡片：折线图
-        self.growth_card = ShadowCard()
-        growth_vbox = QVBoxLayout(self.growth_card)
-        growth_vbox.addWidget(QLabel("📊 综合得分趋势"), alignment=Qt.AlignTop)
+    def _build_charts(self) -> QHBoxLayout:
+        charts = QHBoxLayout()
+        charts.setSpacing(16)
+
+        # 折线图卡片
+        growth_card = DarkCard()
+        g_lay = QVBoxLayout(growth_card)
+        g_lay.setContentsMargins(16, 14, 16, 14)
+        g_title = QLabel("📈  综合得分趋势")
+        g_title.setStyleSheet(f"font-size: 13px; font-weight: 700; color: {T.NEON}; background: transparent; font-family: {T.FONT};")
         self.growth_chart = GrowthChart()
-        growth_vbox.addWidget(self.growth_chart)
+        g_lay.addWidget(g_title)
+        g_lay.addWidget(self.growth_chart)
 
-        # 右侧卡片：雷达图
-        self.radar_card = ShadowCard()
-        radar_vbox = QVBoxLayout(self.radar_card)
-        radar_vbox.addWidget(QLabel("🎯 最近能力维度"), alignment=Qt.AlignTop)
+        # 雷达图卡片
+        radar_card = DarkCard()
+        r_lay = QVBoxLayout(radar_card)
+        r_lay.setContentsMargins(16, 14, 16, 14)
+        r_title = QLabel("🎯  最近能力维度")
+        r_title.setStyleSheet(f"font-size: 13px; font-weight: 700; color: {T.PURPLE}; background: transparent; font-family: {T.FONT};")
         self.radar_chart = RadarChart()
-        radar_vbox.addWidget(self.radar_chart)
+        r_lay.addWidget(r_title)
+        r_lay.addWidget(self.radar_chart)
 
-        charts_layout.addWidget(self.growth_card, stretch=6)
-        charts_layout.addWidget(self.radar_card, stretch=4)
-        layout.addLayout(charts_layout)
+        charts.addWidget(growth_card, stretch=6)
+        charts.addWidget(radar_card, stretch=4)
+        return charts
 
-        # ── 底部报告卡片 ──
-        report_card = ShadowCard()
-        report_vbox = QVBoxLayout(report_card)
-        report_vbox.setContentsMargins(20, 20, 20, 20)
+    def _build_report(self) -> DarkCard:
+        card = DarkCard()
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(18, 14, 18, 14)
+        lay.setSpacing(8)
 
-        report_title = QLabel("📝 最近面试表现回顾")
-        report_title.setStyleSheet(f"font-weight: 700; color: {APPLE_COLORS['text_main']};")
+        title = QLabel("📝  最近面试表现回顾")
+        title.setStyleSheet(f"font-size: 13px; font-weight: 700; color: {T.YELLOW}; background: transparent; font-family: {T.FONT};")
 
         self.report_view = QTextEdit()
         self.report_view.setReadOnly(True)
         self.report_view.setFrameShape(QFrame.NoFrame)
-        self.report_view.setPlaceholderText("选择学生查看详细历史反馈...")
-        self.report_view.setStyleSheet(f"background: transparent; font-size: 14px; line-height: 1.6;")
+        self.report_view.setPlaceholderText("选择成员后查看详细历史面试反馈...")
+        self.report_view.setStyleSheet(f"""
+            QTextEdit {{
+                background: transparent;
+                color: {T.TEXT};
+                font-size: 13px;
+                border: none;
+                font-family: {T.FONT};
+                line-height: 1.7;
+            }}
+        """)
 
-        report_vbox.addWidget(report_title)
-        report_vbox.addWidget(self.report_view)
-        layout.addWidget(report_card, stretch=1)
+        lay.addWidget(title)
+        lay.addWidget(self.report_view)
+        return card
 
-        self.student_combo.currentIndexChanged.connect(self._load_student_data)
-        self._refresh()
+    # ── 数据逻辑（与原版相同） ────────────────────────────────────────────────
 
     def _refresh(self):
         self.student_combo.blockSignals(True)
@@ -277,24 +326,22 @@ class HistoryPanel(QWidget):
 
     def _load_student_data(self):
         sid = self.student_combo.currentData()
-        if not sid: return
+        if not sid:
+            return
 
         sessions = self.db.fetchall(
             "SELECT id, overall_score, report, started_at FROM interview_session "
             "WHERE student_id=? AND status='finished' ORDER BY started_at", (sid,)
         )
-
         if not sessions:
-            self.growth_chart.set_scores([]);
+            self.growth_chart.set_scores([])
             self.radar_chart.set_data({})
             self.report_view.setPlainText("暂无已完成的面试记录。")
             return
 
-        # 更新成长曲线
         scores = [s[1] for s in sessions if s[1] is not None]
         self.growth_chart.set_scores(scores)
 
-        # 更新雷达图与报告内容
         latest = sessions[-1]
         self.report_view.setMarkdown(latest[2] or "无报告内容")
 
@@ -307,7 +354,7 @@ class HistoryPanel(QWidget):
             for (sc_json,) in turns:
                 sc = json.loads(sc_json)
                 for k, cn in key_map.items():
-                    if k in sc: dim_totals[cn].append(sc[k])
-
-            radar_data = {cn: round(sum(vals) / len(vals), 1) if vals else 0 for cn, vals in dim_totals.items()}
+                    if k in sc:
+                        dim_totals[cn].append(sc[k])
+            radar_data = {cn: round(sum(v) / len(v), 1) if v else 0 for cn, v in dim_totals.items()}
             self.radar_chart.set_data(radar_data)
