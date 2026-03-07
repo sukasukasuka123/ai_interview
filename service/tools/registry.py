@@ -5,14 +5,18 @@
   1. 查询学生历史面试记录
   2. 查询岗位信息
   3. 知识库检索（RAG）
-  4. DuckDuckGo 网络搜索（查最新技术资料）
-  5. Wikipedia 概念查询
+  4. 题库抽题工具（按分类/难度随机抽题）
+  5. 题库内容查询（精确搜索）
+  6. DuckDuckGo 网络搜索
+  7. Wikipedia 技术概念查询
 """
 import json
 import os
+import random
 from typing import List, Optional
 
 from langchain_core.tools import tool
+
 try:
     from langchain_community.tools import DuckDuckGoSearchRun
 except ImportError:
@@ -104,7 +108,106 @@ def create_rag_tool(knowledge_store):
     return search_knowledge_base
 
 
-# ── Tool 4：DuckDuckGo 网络搜索 ───────────────────────────────────────────────
+# ── Tool 4：题库抽题 ──────────────────────────────────────────────────────────
+
+def create_quiz_draw_tool(db):
+    @tool
+    def draw_questions_from_bank(
+        classify: str = "",
+        level: str = "",
+        count: int = 5,
+    ) -> str:
+        """
+        从题库按分类和难度随机抽题。
+        classify：题目分类，如 'Java基础'、'MySQL'、'Redis'、'JavaScript'、'Vue/React'、'Spring'、'JVM'、'计算机网络'、'数据结构与算法'。留空则不限分类。
+        level：难度，'初级'/'中级'/'高级'，留空则不限难度。
+        count：抽题数量，默认5题，最多20题。
+        """
+        count = min(count, 20)
+        sql = "SELECT id, classify, level, content FROM question_bank WHERE 1=1"
+        params = []
+        if classify:
+            sql += " AND classify=?"
+            params.append(classify)
+        if level:
+            sql += " AND level=?"
+            params.append(level)
+
+        rows = db.fetchall(sql, tuple(params))
+        if not rows:
+            return f"未找到符合条件的题目（分类={classify or '不限'}，难度={level or '不限'}）。"
+
+        selected = random.sample(rows, min(count, len(rows)))
+        lines = [f"📚 已从题库抽取 {len(selected)} 道题目：\n"]
+        for i, (qid, cls, lvl, content) in enumerate(selected, 1):
+            lines.append(f"**Q{i}** [{cls} · {lvl}]\n{content}\n")
+        return "\n".join(lines)
+
+    return draw_questions_from_bank
+
+
+# ── Tool 5：题库内容精确查询 ──────────────────────────────────────────────────
+
+def create_quiz_search_tool(db):
+    @tool
+    def search_question_bank(keyword: str, show_answer: bool = True) -> str:
+        """
+        在题库中关键词搜索题目。
+        keyword：搜索关键词（在题目内容中模糊匹配）。
+        show_answer：是否显示参考答案，默认显示。
+        """
+        rows = db.fetchall(
+            "SELECT id, classify, level, content, answer FROM question_bank "
+            "WHERE content LIKE ? OR answer LIKE ? LIMIT 10",
+            (f"%{keyword}%", f"%{keyword}%"),
+        )
+        if not rows:
+            return f"题库中未找到包含「{keyword}」的题目。"
+
+        lines = [f"🔍 搜索「{keyword}」共找到 {len(rows)} 道题目：\n"]
+        for qid, cls, lvl, content, answer in rows:
+            lines.append(f"**[{cls} · {lvl}]** {content}")
+            if show_answer:
+                lines.append(f"📝 参考答案：{answer[:200]}{'...' if len(answer) > 200 else ''}")
+            lines.append("")
+        return "\n".join(lines)
+
+    return search_question_bank
+
+
+# ── Tool 6：题库分类统计 ──────────────────────────────────────────────────────
+
+def create_quiz_stats_tool(db):
+    @tool
+    def get_question_bank_stats() -> str:
+        """
+        查看题库的整体统计：各分类、各难度的题目数量分布。
+        """
+        rows = db.fetchall(
+            "SELECT classify, level, COUNT(*) as cnt FROM question_bank GROUP BY classify, level ORDER BY classify, level"
+        )
+        if not rows:
+            return "题库暂无数据。"
+
+        total = db.fetchone("SELECT COUNT(*) FROM question_bank")[0]
+        lines = [f"📊 题库统计（共 {total} 题）：\n"]
+
+        current_cls = None
+        for cls, lvl, cnt in rows:
+            if cls != current_cls:
+                current_cls = cls
+                lines.append(f"\n**{cls}**")
+            lines.append(f"  {lvl}：{cnt} 题")
+
+        # 获取所有分类列表
+        classifies = db.fetchall("SELECT DISTINCT classify FROM question_bank ORDER BY classify")
+        lines.append(f"\n可用分类：{', '.join(r[0] for r in classifies)}")
+        return "\n".join(lines)
+
+    return get_question_bank_stats
+
+
+# ── Tool 7：DuckDuckGo 网络搜索 ───────────────────────────────────────────────
 
 def create_web_search_tool():
     _search = DuckDuckGoSearchRun()
@@ -123,7 +226,7 @@ def create_web_search_tool():
     return web_search
 
 
-# ── Tool 5：Wikipedia 技术概念查询 ────────────────────────────────────────────
+# ── Tool 8：Wikipedia 技术概念查询 ────────────────────────────────────────────
 
 def create_wiki_tool():
     _wiki = WikipediaQueryRun(
@@ -148,13 +251,14 @@ def create_wiki_tool():
 # ── 工具注册入口 ──────────────────────────────────────────────────────────────
 
 def get_tools(db, knowledge_store) -> list:
-    """
-    返回面试 Agent 的全部工具列表。
-    """
+    """返回面试 Agent 的全部工具列表。"""
     return [
         create_history_tool(db),
         create_job_info_tool(db),
         create_rag_tool(knowledge_store),
+        create_quiz_draw_tool(db),
+        create_quiz_search_tool(db),
+        create_quiz_stats_tool(db),
         create_web_search_tool(),
         create_wiki_tool(),
     ]

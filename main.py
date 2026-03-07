@@ -21,6 +21,7 @@ from service.tools import get_tools
 from UI.interview_panel import InterviewPanel
 from UI.agent_panel import AgentPanel
 from UI.history_panel import HistoryPanel
+from UI.quiz_panel import QuizPanel
 
 
 def _seed_knowledge(ks: KnowledgeStore, db):
@@ -29,7 +30,6 @@ def _seed_knowledge(ks: KnowledgeStore, db):
     if not base_dir.exists():
         return
 
-    # 岗位目录名 → job_position_id 映射
     pos_rows = db.fetchall("SELECT id, name FROM job_position")
     name_to_id = {name: jid for jid, name in pos_rows}
 
@@ -44,7 +44,6 @@ def _seed_knowledge(ks: KnowledgeStore, db):
         if not folder.exists():
             continue
         for fpath in folder.glob("*.txt"):
-            # 检查是否已经导入过（按文件名判断）
             existing = db.fetchone(
                 "SELECT id FROM knowledge_chunk WHERE source=? LIMIT 1",
                 (fpath.name,),
@@ -57,22 +56,23 @@ def _seed_knowledge(ks: KnowledgeStore, db):
             except Exception as e:
                 print(f"[KnowledgeStore] 导入失败 {fpath.name}: {e}")
 
-    # 把题库答案也导入知识库
-    for job_id in [1, 2]:
+    # 题库答案也导入知识库做 RAG
+    for job_id in [0, 1, 2]:
+        # 把 question_bank 里的 Q&A 也向量化入库
         already = db.fetchone(
-            "SELECT id FROM knowledge_chunk WHERE source='题库答案' AND job_position_id=? LIMIT 1",
-            (job_id,),
+            "SELECT id FROM knowledge_chunk WHERE source='题库QA' LIMIT 1"
         )
         if already:
-            continue
-        qa_rows = db.fetchall(
-            "SELECT content, answer FROM question_bank WHERE job_position_id=?",
-            (job_id,),
-        )
+            break
+        qa_rows = db.fetchall("SELECT content, answer FROM question_bank")
         if qa_rows:
             qa_list = [{"question": q, "answer": a} for q, a in qa_rows]
-            count = ks.add_qa_pairs(qa_list, job_position_id=job_id)
-            print(f"[KnowledgeStore] 题库答案导入 job_id={job_id} → {count} 个分块")
+            try:
+                count = ks.add_qa_pairs(qa_list, job_position_id=0)
+                print(f"[KnowledgeStore] 题库 Q&A 导入 → {count} 个分块")
+            except Exception as e:
+                print(f"[KnowledgeStore] 题库 Q&A 导入失败: {e}")
+            break
 
 
 def main():
@@ -93,12 +93,15 @@ def main():
         db=db,
         system_prompt="""你是一位专业的求职面试辅导助手。
 你可以帮助用户：
-1. 查询各岗位的技术要求和面试重点
-2. 从知识库检索技术概念的解释
-3. 搜索最新的技术资料和行业动态
-4. 查看学生的历史面试表现
+1. 从题库随机抽题或搜索题目（使用 draw_questions_from_bank / search_question_bank）
+2. 查看题库统计（使用 get_question_bank_stats）
+3. 查询岗位技术要求（使用 get_job_position_info）
+4. 从知识库检索技术概念（使用 search_knowledge_base）
+5. 联网搜索最新技术资料（使用 web_search）
+6. 查看学生历史面试表现（使用 get_student_interview_history）
 
-请用简洁、专业的中文回答，必要时调用工具获取准确信息。""",
+请用简洁、专业的中文回答。遇到技术问题优先查询知识库，知识库没有时再联网搜索。
+输出格式要清晰，善用 Markdown 标题和列表。""",
     )
     tools = get_tools(db, ks)
     agent.register_tools(tools)
@@ -106,7 +109,7 @@ def main():
     # ── UI ───────────────────────────────────────────────────────────────────
     window = QMainWindow()
     window.setWindowTitle("AI 模拟面试与能力提升平台")
-    window.resize(1280, 820)
+    window.resize(1300, 860)
 
     central = QWidget()
     window.setCentralWidget(central)
@@ -138,11 +141,13 @@ def main():
 
     interview_panel = InterviewPanel(db, engine)
     history_panel   = HistoryPanel(db)
+    quiz_panel      = QuizPanel(db)
     agent_panel     = AgentPanel(agent)
 
-    tabs.addTab(interview_panel, "🎯 模拟面试")
-    tabs.addTab(history_panel,   "📊 历史分析")
-    tabs.addTab(agent_panel,     "🤖 AI 助手")
+    tabs.addTab(interview_panel, "🎯  模拟面试")
+    tabs.addTab(quiz_panel,      "📚  题库练习")
+    tabs.addTab(history_panel,   "📊  历史分析")
+    tabs.addTab(agent_panel,     "🤖  AI 助手")
 
     root.addWidget(tabs)
 
