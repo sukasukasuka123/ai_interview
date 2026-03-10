@@ -10,13 +10,14 @@
 - [项目总览](#1-项目总览)
 - [快速启动](#2-快速启动)
 - [协作者任务分工](#3-协作者任务分工)
-- [任务 A — 语音交互](#4-任务-a--语音交互agent_core-推送)
+- [任务 A — 语音交互](#4-任务-a--语音交互)
 - [任务 B — 双知识库](#5-任务-b--双知识库-rag-扩展)
-- [数据库结构](#6-数据库结构说明)
-- [UI 组件规范](#7-ui-组件规范)
-- [工具权限体系](#8-工具权限体系skillset)
-- [提交规范](#9-开发与提交规范)
-- [FAQ](#10-常见问题-faq)
+- [核心调用链](#6-核心调用链)
+- [数据库结构](#7-数据库结构说明)
+- [UI 组件规范](#8-ui-组件规范)
+- [工具权限体系](#9-工具权限体系skillset)
+- [提交规范](#10-开发与提交规范)
+- [FAQ](#11-常见问题-faq)
 
 ---
 
@@ -33,14 +34,14 @@
 
 ### 1.2 当前架构一览
 
-| 层次 | 技术栈 | 说明                                          |
-|------|--------|---------------------------------------------|
-| UI 层 | PySide6 6.6 | 桌面端，四个主面板                                   |
+| 层次 | 技术栈 | 说明 |
+|------|--------|------|
+| UI 层 | PySide6 6.6 | 桌面端，四个主面板 |
 | Service 层 | Python 3.11 | Agent / Engine / Evaluator / KnowledgeStore |
-| 工具层 | LangChain Core + 原生 SDK | 8 类工具，按 SkillSet 权限分发                       |
-| 大模型 | Qwen (DashScope) | qwen-plus / qwen3-omni-flash / qwen3-asr    |
-| 知识库 | 阿里云百炼 RAG | 目前 1 个库，本次扩展为 2 个,都在百炼知识库中（见第 5 节）          |
-| 存储 | SQLite (WAL 模式) | 本地单文件，结构见 `service/schema.py`               |
+| 工具层 | LangChain Core + 原生 SDK | 8 类工具，按 SkillSet 权限分发 |
+| 大模型 | Qwen (DashScope) | qwen-plus / qwen3-omni-flash |
+| 知识库 | 阿里云百炼 RAG | 目前 1 个库，本次扩展为 2 个（见第 5 节） |
+| 存储 | SQLite (WAL 模式) | 本地单文件，结构见 `service/schema.py` |
 
 ### 1.3 目录结构
 
@@ -50,7 +51,7 @@ ai_interview/
 ├── .env                         # 密钥配置（不提交 Git）
 ├── .env.example                 # 密钥模板
 ├── requirements.txt
-├── README.md                    # 本文件
+├── README.md
 │
 ├── service/
 │   ├── db.py                    # SQLite 连接管理（单例）
@@ -58,28 +59,22 @@ ai_interview/
 │   ├── agent_core.py            # Agent 框架（流式 + 工具调用）
 │   ├── interview_engine.py      # 面试流程引擎
 │   ├── evaluator.py             # 多维度评分
-│   ├── knowledge_store.py       # 知识库检索（百炼 RAG）← 本次扩展
-│   ├── voice.py                 # 语音 STT/TTS（新增，任务 A）
+│   ├── knowledge_store.py       # 知识库检索（百炼 RAG）← 任务 B 扩展点
+│   ├── voice.py                 # 语音 STT/TTS ← 任务 A 新建
 │   └── tools/
 │       ├── __init__.py          # 统一导出
 │       ├── registry.py          # 工具注册中心（懒加载）
-│       ├── permissions.py       # SkillSet 权限集合定义
-│       ├── db_tools.py          # 题库/历史/岗位工具（含分页）
-│       ├── knowledge_tools.py   # RAG 检索工具 ← 本次扩展双库
+│       ├── permissions.py       # SkillSet 权限集合定义 ← 任务 B 扩展点
+│       ├── db_tools.py          # 题库/历史/岗位工具
+│       ├── knowledge_tools.py   # RAG 检索工具 ← 任务 B 扩展点
 │       └── search_tools.py      # 博查/Wikipedia 联网搜索
 │
-├── UI/
-│   ├── components.py            # 统一组件库（Theme / ChatBubble 等）
-│   ├── interview_panel.py       # 面试主界面
-│   ├── quiz_panel.py            # 题库练习（含服务端分页/排序）
-│   ├── history_panel.py         # 历史成长曲线
-│   └── agent_panel.py           # AI 知识助手
-│
-└──（cloud 云上） knowledge_base/
-    ├── interview/               # 面试要点知识库本地备份（对应百炼库 A）
-    │   └── *.txt
-    └── teaching/                # 老师教学资料（对应百炼库 B）← 新增
-        └── *.pdf / *.txt / ...  # 由老师上传，不提交 Git
+└── UI/
+    ├── components.py            # 统一组件库（Theme / ChatBubble 等）
+    ├── interview_panel.py       # 面试主界面 ← 任务 A 扩展点
+    ├── quiz_panel.py            # 题库练习
+    ├── history_panel.py         # 历史成长曲线
+    └── agent_panel.py           # AI 知识助手
 ```
 
 ---
@@ -92,27 +87,33 @@ ai_interview/
 |------|------|------|
 | Python | 3.11+ | 低版本缺少 `match/case`，不兼容 |
 
-其他直接跟着![requirements.txt](requirements.txt)来即可，pycharm有安装提示的
+其他依赖见 `requirements.txt`，PyCharm 有自动安装提示。
+
+> ⚠️ `torch==2.10.0` 建议单独先装，再装其余：
+> ```bash
+> pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cpu
+> pip install -r requirements.txt
+> ```
 
 ### 2.2 安装步骤
 
 1. 克隆仓库
-2. 配置密钥
-3. 安装依赖项
+2. 复制 `.env.example` 为 `.env`，填入真实密钥（见 2.3）
+3. 安装依赖
 
-### 2.3 .env 密钥说明
+### 2.3 .env 配置说明
 
 > ⚠️ **所有 Key 均不要提交 Git**，`.gitignore` 已包含 `.env`
-> 目前的.env_example只是给出了样例实现，里面的apikey并不存在
-> 你需要添加的是语音sdk需要添加的依赖项
 
 ```env
 # ── 核心（必填）──────────────────────────────────────────
 DASHSCOPE_API_KEY="sk-xxx"           # 所有 Qwen 模型 + 语音 API 的统一 Key
 
-# ── 知识库（必填）────────────────────────────────────────
-BAILOU_KNOWLEDGE_BASE_ID="xxx"       # 面试要点库 ID（百炼控制台获取，库 A）
-BAILOU_TEACHING_KB_ID="xxx"         # 教学资料库 ID（新增，库 B）
+# ── 知识库 A（必填）──────────────────────────────────────
+BAILOU_KNOWLEDGE_BASE_ID="xxx"       # 面试要点库 ID（百炼控制台获取）
+
+# ── 知识库 B（任务 B 后必填，未配置时双库功能自动降级）──
+BAILOU_TEACHING_KB_ID="xxx"          # 教学资料库 ID（新增）
 
 # ── 百炼官方 SDK 模式（三件套，比 HTTP 模式更稳定）──────
 BAILOU_WORKSPACE_ID="xxx"
@@ -123,21 +124,35 @@ ALIBABA_CLOUD_ACCESS_KEY_SECRET="xxx"
 BOCHA_API_KEY="xxx"                  # https://open.bochaai.com 注册获取
 ```
 
+**配置优先级说明：**
+- `DASHSCOPE_API_KEY` + `BAILOU_KNOWLEDGE_BASE_ID`：最低要求，HTTP 模式启动
+- 加上百炼三件套：切换官方 SDK 模式，更稳定
+- `BAILOU_TEACHING_KB_ID` 缺失时，`retrieve()` 对库 B 的调用返回提示字符串，不会崩溃
+
 ---
 
 ## 3. 协作者任务分工
 
-本次迭代有两个独立开发任务，可以**并行**进行，互不依赖：
-多个人协同分工完成
+本次迭代有两个独立开发任务，可**并行**进行，互不依赖：
 
 | 任务 | 负责内容 | 关键文件 | 优先级 |
 |------|----------|----------|--------|
-| **任务 A** | 语音交互推送到 agent_core | `service/voice.py`（新建）<br>`UI/interview_panel.py` | P0 |
-| **任务 B** | 双知识库 RAG 扩展 | `service/knowledge_store.py`<br>`service/tools/knowledge_tools.py`<br>`service/tools/permissions.py` | P0 |
+| **任务 A** | 语音交互（录音 → STT → 注入面试流程） | `service/voice.py`（新建）`UI/interview_panel.py` | P0 |
+| **任务 B** | 双知识库 RAG 扩展 | `service/knowledge_store.py` `service/tools/knowledge_tools.py` `service/tools/permissions.py` | P0 |
+
+**禁止改动的文件（两个任务都不应修改）：**
+
+| 文件 | 原因 |
+|------|------|
+| `service/agent_core.py` | 任务 A 约定：语音只需把 STT 结果填入输入框，不改 Agent 逻辑 |
+| `service/evaluator.py` | 评分逻辑稳定，P1 阶段情感分析再改 |
+| `service/db.py` | 单例连接管理，勿动 |
+| `service/schema.py` | `audio_path` 字段已预留，无需改表 |
+| `UI/components.py` | 组件库，改动影响所有面板 |
 
 ---
 
-## 4. 任务 A — 语音交互（agent_core 推送）
+## 4. 任务 A — 语音交互
 
 ### 4.1 背景与目标
 
@@ -145,9 +160,9 @@ BOCHA_API_KEY="xxx"                  # https://open.bochaai.com 注册获取
 
 - 🎤 **语音输入**：学生录音 → STT（语音转文字）→ 注入现有面试流程
 - 🔊 **语音播报**（可选加分项）：AI 问题 → TTS → 播报给学生
-- 😊 **情感分析**：实时识别学生语音情绪 → 影响表达维度评分
+- 😊 **情感分析**（P1）：实时识别学生语音情绪 → 影响表达维度评分
 
-> ✅ **关键约定**：语音模块只需在 UI 层增加录音按钮，STT 后将文字填入现有输入框。**不改变 agent_core 的任何调用逻辑**，改动量极小。
+**关键约定**：语音模块只在 UI 层新增录音按钮，STT 后将文字填入现有输入框，**不改变 `agent_core.py` 的任何调用逻辑**，改动量极小。
 
 ### 4.2 推荐使用的 Qwen 语音 API
 
@@ -159,54 +174,37 @@ BOCHA_API_KEY="xxx"                  # https://open.bochaai.com 注册获取
 | STT（实时流式） | `qwen3-asr-flash-realtime` | 实时识别 + 情感分析 | ⭐⭐⭐ |
 | TTS（实时合成） | `qwen3-tts-flash-realtime` | AI 面试官语音播报 | ⭐⭐⭐ |
 
-### 4.3 P0 版本：录音文件 STT（推荐先做这个）
+### 4.3 P0 版本实现步骤
 
 #### Step 1 — 安装音频依赖
 
 ```bash
 pip install sounddevice soundfile
-# requirements.txt 里也要加上这两行
+# 同步更新 requirements.txt
 ```
 
+> Windows 上若 `sounddevice` 报错，可追加 `pip install pyaudio`
+
 #### Step 2 — 新建 `service/voice.py`
-样例实现不代表最终版本
+
+> ℹ️ 以下为**参考实现**，不要直接复制，需根据实际 API 返回格式调整。
+
 ```python
 # service/voice.py
-"""
-语音录制 & STT 模块
-P0 版本：录音文件 → qwen3-asr-flash → 文字
-"""
-import os
-import tempfile
-import threading
-
-import requests
-import sounddevice as sd
-import soundfile as sf
-
+import os, tempfile, threading
+import requests, sounddevice as sd, soundfile as sf
 
 def record_audio(seconds: int = 8, sample_rate: int = 16000) -> str:
-    """
-    录制音频，返回临时 .wav 文件路径。
-    阻塞调用，录完才返回。
-    """
-    audio = sd.rec(
-        int(seconds * sample_rate),
-        samplerate=sample_rate,
-        channels=1,
-        dtype="int16",
-    )
+    """录制音频，返回临时 .wav 文件路径（阻塞）"""
+    audio = sd.rec(int(seconds * sample_rate), samplerate=sample_rate,
+                   channels=1, dtype="int16")
     sd.wait()
     tmp = tempfile.mktemp(suffix=".wav")
     sf.write(tmp, audio, sample_rate)
     return tmp
 
-
 def stt(audio_path: str) -> str:
-    """
-    调用 qwen3-asr-flash 将音频文件转换为文字。
-    返回识别文本，失败时返回空字符串。
-    """
+    """调用 qwen3-asr-flash 将音频文件转换为文字，失败返回空字符串"""
     api_key = os.getenv("DASHSCOPE_API_KEY", "")
     try:
         with open(audio_path, "rb") as f:
@@ -225,7 +223,6 @@ def stt(audio_path: str) -> str:
         print(f"[STT] 失败: {e}")
         return ""
     finally:
-        # 清理临时文件
         try:
             os.unlink(audio_path)
         except Exception:
@@ -234,28 +231,23 @@ def stt(audio_path: str) -> str:
 
 #### Step 3 — 在 `UI/interview_panel.py` 中增加录音按钮
 
-在 `_build_footer()` 方法的 `input_row` 里追加，**不改动其他逻辑**：
+改动范围：**仅 `_build_footer()` 方法尾部追加按钮 + 新增 `_toggle_recording()` 方法**，其他代码一律不动。
 
 ```python
-# interview_panel.py → _build_footer() 方法中
-
-# 在 input_row.addWidget(self.send_btn) 之后追加：
+# _build_footer() 中，send_btn 追加之后：
 self.voice_btn = ButtonFactory.primary("🎤", T.ACCENT, height=54)
 self.voice_btn.setFixedWidth(54)
-self.voice_btn.setToolTip("按住录音（5秒），松开后自动识别")
+self.voice_btn.setToolTip("点击录音（8秒），录完后自动识别")
 self.voice_btn.clicked.connect(self._toggle_recording)
 input_row.addWidget(self.voice_btn)
-
-# 初始状态
 self._is_recording = False
 ```
 
 ```python
-# interview_panel.py 中新增方法
-
+# 新增方法（与 _send_answer 同级）：
 def _toggle_recording(self):
     if self._is_recording:
-        return  # 录音中，忽略重复点击
+        return
     self._is_recording = True
     self.voice_btn.setText("🔴")
     self.voice_btn.setEnabled(False)
@@ -264,9 +256,9 @@ def _toggle_recording(self):
         from service.voice import record_audio, stt
         path = record_audio(seconds=8)
         text = stt(path)
-        # 回主线程更新 UI（用 QTimer 或 Signal）
-        if text:
-            self.answer_input.setPlainText(text)
+        # ⚠️ UI 更新必须回主线程，参考 AgentPanel 的 StreamSignals 写法：
+        # 定义 Signal(str) 信号，在槽函数中 setPlainText(text)
+        # 不要直接在子线程里调用 self.answer_input.setPlainText()
         self._is_recording = False
         self.voice_btn.setText("🎤")
         self.voice_btn.setEnabled(True)
@@ -274,9 +266,38 @@ def _toggle_recording(self):
     threading.Thread(target=run, daemon=True).start()
 ```
 
-> ⚠️ `run()` 里的 UI 更新需要在主线程执行。最稳妥的方式是用一个 `Signal(str)` 信号传回文字，在槽函数里 `setPlainText`。参考 `AgentPanel` 里 `StreamSignals` 的写法。
+**跨线程 UI 更新方式**（参考 `AgentPanel` 中 `StreamSignals` 的模式）：
 
-### 4.4 P1 版本：实时流式 + 情感分析
+```python
+# 在类顶部定义信号
+from PySide6.QtCore import Signal, QObject
+class _VoiceSignals(QObject):
+    text_ready = Signal(str)
+
+# __init__ 中
+self._voice_signals = _VoiceSignals()
+self._voice_signals.text_ready.connect(self.answer_input.setPlainText)
+
+# run() 里替换直接 setPlainText：
+if text:
+    self._voice_signals.text_ready.emit(text)
+```
+
+### 4.4 audio_path 字段（已预留）
+
+`interview_turn` 表中已有 `audio_path` 字段，任务 A 完成后可写入录音路径，**无需改表结构**：
+
+```python
+# interview_engine.py → submit_answer() 可选扩展签名：
+def submit_answer(self, session_id: int, answer: str, audio_path: str = "") -> dict:
+    ...
+    self.db.execute(
+        "UPDATE interview_turn SET student_answer=?, scores=?, audio_path=? WHERE id=?",
+        (answer, json.dumps(eval_result.to_dict()), audio_path, turn_id),
+    )
+```
+
+### 4.5 P1 版本：实时流式 + 情感分析
 
 实时识别通过 WebSocket 接入，情感分析结果可作为 `clarity_score` 的修正因子：
 
@@ -285,20 +306,6 @@ def _toggle_recording(self):
 - 评分权重：平静/愉快 +0.5，明显紧张/颤抖 -0.5
 
 > ℹ️ 实时方案改动较大，**建议 P0 先上线，再迭代**。P0 已足够满足命题多模态要求。
-
-### 4.5 audio_path 字段（已预留，直接用）
-
-`interview_turn` 表中已有 `audio_path` 字段，录音文件路径直接写进去：
-
-```python
-# interview_engine.py → submit_answer() 签名改为：
-def submit_answer(self, session_id: int, answer: str, audio_path: str = "") -> dict:
-    ...
-    self.db.execute(
-        "UPDATE interview_turn SET student_answer=?, scores=?, audio_path=? WHERE id=?",
-        (answer, json.dumps(eval_result.to_dict()), audio_path, turn_id),
-    )
-```
 
 ---
 
@@ -313,26 +320,34 @@ def submit_answer(self, session_id: int, answer: str, audio_path: str = "") -> d
 | 知识库 | 环境变量 | 内容 | 维护者 | 场景 |
 |--------|----------|------|--------|------|
 | **库 A — 面试要点库** | `BAILOU_KNOWLEDGE_BASE_ID` | 通用面试知识（现有） | 技术团队 | 所有面试模式 |
-| **库 B — 教学资料库** | `BAILOU_TEACHING_KB_ID` | 老师课程 PPT / 讲义 / 项目文档 | **老师上传** | 课程答辩模式 |
+| **库 B — 教学资料库** | `BAILOU_TEACHING_KB_ID` | 老师课程 PPT / 讲义 / 项目文档 | 老师上传 | 课程答辩模式 |
 
 ### 5.2 课程答辩模式的产品逻辑
 
-老师把教学资料上传到「教学资料库」后，AI 可以基于这些内容对学生出题，考察学生对课程项目的掌握程度。
-
-这等价于把「老师答辩学生项目」这一传统场景数字化：
+老师把教学资料上传到「教学资料库」后，AI 可以基于这些内容对学生出题，考察学生对课程项目的掌握程度——把传统「老师答辩学生项目」场景数字化：
 
 1. 老师上传课程讲义、项目需求文档、参考实现
 2. 学生进入「课程答辩」模式
 3. AI 面试官从讲义中理解课程核心知识点，据此出题
 4. 评分结合面试要点（库 A）+ 课程要求（库 B）双重参考
-5. 所以需要做各个agent的权限管理！！！！！！
+5. 各 Agent 权限通过 SkillSet 隔离，详见第 9 节
 
-### 5.3 `knowledge_store.py` 修改方案
+### 5.3 需要修改的文件清单
 
-#### ① 新增 `KnowledgeType` 枚举
+每个文件的改动目的明确，按顺序执行：
+
+| 顺序 | 文件 | 改动内容 |
+|------|------|----------|
+| 1 | `service/knowledge_store.py` | 新增 `KnowledgeType` 枚举；`retrieve()` 支持按枚举路由；新增 `retrieve_combined()` |
+| 2 | `service/tools/knowledge_tools.py` | 新增 `create_teaching_rag_tool` 和 `create_combined_rag_tool` |
+| 3 | `service/tools/permissions.py` | 新增工具名常量；新增 `COURSE_DEFENSE_SKILLS` |
+| 4 | `service/tools/registry.py` | `_TOOL_FACTORIES` 末尾追加两个新工具 |
+
+### 5.4 `knowledge_store.py` 修改方案
+
+#### ① 新增 `KnowledgeType` 枚举（文件顶部）
 
 ```python
-# service/knowledge_store.py 顶部新增
 from enum import Enum
 
 class KnowledgeType(Enum):
@@ -342,20 +357,24 @@ class KnowledgeType(Enum):
 
 #### ② `__init__` 中初始化两个库 ID
 
+在现有 `self.knowledge_base_id = ...` 一行**之后**追加：
+
 ```python
-def __init__(self, db=None, ...):
-    ...
-    self.knowledge_base_id = os.getenv("BAILOU_KNOWLEDGE_BASE_ID", "")  # 原有
-    self.teaching_kb_id    = os.getenv("BAILOU_TEACHING_KB_ID", "")     # 新增
+self.teaching_kb_id = os.getenv("BAILOU_TEACHING_KB_ID", "")
+# 注意：teaching_kb_id 允许为空，缺失时 retrieve() 返回提示字符串而非抛异常
 ```
 
+> ⚠️ 现有 `__init__` 对 `BAILOU_KNOWLEDGE_BASE_ID` 缺失直接 `raise ValueError`，这个行为保持不变。`BAILOU_TEACHING_KB_ID` 缺失时**不抛异常**，只在调用时返回提示。
+
 #### ③ `retrieve()` 支持按类型路由
+
+在现有 `retrieve()` 签名中增加 `knowledge_type` 参数（默认保持原有行为，兼容所有现有调用方）：
 
 ```python
 def retrieve(
     self,
     query: str,
-    knowledge_type: KnowledgeType = KnowledgeType.INTERVIEW,  # 新增参数
+    knowledge_type: KnowledgeType = KnowledgeType.INTERVIEW,  # 新增，默认不变
     job_position_id: int = 0,
     top_k: int = 3,
 ) -> List[str]:
@@ -363,16 +382,17 @@ def retrieve(
     if knowledge_type == KnowledgeType.TEACHING:
         kb_id = self.teaching_kb_id
         if not kb_id:
-            return ["⚠️ 教学资料库未配置（BAILOU_TEACHING_KB_ID）"]
+            return ["⚠️ 教学资料库未配置（BAILOU_TEACHING_KB_ID），请在 .env 中添加"]
     else:
         kb_id = self.knowledge_base_id
 
-    # 后续检索逻辑不变，只是把 self.knowledge_base_id 换成 kb_id
-    # _retrieve_sdk() 和 _retrieve_http() 也需要接收 kb_id 参数
-    ...
+    # 后续检索逻辑不变，将原来硬编码的 self.knowledge_base_id 替换为 kb_id
+    # _retrieve_sdk() 和 _retrieve_http() 需增加 kb_id 参数（见下）
 ```
 
-#### ④ 新增混合检索方法（课程答辩专用）
+同步修改 `_retrieve_sdk()` 和 `_retrieve_http()`：在参数列表第一位加 `kb_id: str`，方法体内将 `self.knowledge_base_id` 替换为 `kb_id`。
+
+#### ④ 新增混合检索方法
 
 ```python
 def retrieve_combined(self, query: str, top_k: int = 3) -> str:
@@ -391,19 +411,16 @@ def retrieve_combined(self, query: str, top_k: int = 3) -> str:
     return "\n".join(lines) if lines else ""
 ```
 
-### 5.4 `knowledge_tools.py` 扩展
+### 5.5 `knowledge_tools.py` 扩展
 
-新增两个工具函数，加入 `permissions.py` 的 `COURSE_DEFENSE_SKILLS`：
+在现有 `create_rag_tool` **之后**追加（不要修改已有函数）：
 
 ```python
-# service/tools/knowledge_tools.py 中新增
-
 from service.knowledge_store import KnowledgeType
 
 class TeachingKBSearchInput(BaseModel):
     query: str = Field(..., description="检索教学资料库的关键词或问题描述")
     top_k: int = Field(default=3, description="返回结果条数", ge=1, le=5)
-
 
 def create_teaching_rag_tool(knowledge_store):
     @tool(args_schema=TeachingKBSearchInput)
@@ -422,14 +439,12 @@ def create_teaching_rag_tool(knowledge_store):
         for i, r in enumerate(results, 1):
             lines.append(f"[{i}] {r}\n")
         return "\n".join(lines)
-
     return search_teaching_knowledge
 
 
 class CombinedKBSearchInput(BaseModel):
     query: str = Field(..., description="检索关键词，将同时查询面试要点库和教学资料库")
     top_k: int = Field(default=3, description="每个知识库各返回的条数", ge=1, le=5)
-
 
 def create_combined_rag_tool(knowledge_store):
     @tool(args_schema=CombinedKBSearchInput)
@@ -440,17 +455,17 @@ def create_combined_rag_tool(knowledge_store):
         """
         combined = knowledge_store.retrieve_combined(query, top_k=top_k)
         return combined if combined else "两个知识库均未找到相关内容。"
-
     return search_combined_knowledge
 ```
 
-### 5.5 `permissions.py` 扩展
+### 5.6 `permissions.py` 扩展
+
+在现有常量块**末尾**追加（不要修改已有 SkillSet）：
 
 ```python
-# service/tools/permissions.py 新增
-
-TOOL_TEACHING_RAG  = "search_teaching_knowledge"
-TOOL_COMBINED_RAG  = "search_combined_knowledge"
+# 新增工具名常量
+TOOL_TEACHING_RAG = "search_teaching_knowledge"
+TOOL_COMBINED_RAG = "search_combined_knowledge"
 
 # 课程答辩专用权限集合
 COURSE_DEFENSE_SKILLS = SkillSet(
@@ -466,27 +481,29 @@ COURSE_DEFENSE_SKILLS = SkillSet(
     }),
 )
 
-# 同时更新 ALL_SKILL_SETS
+# 追加到注册表
 ALL_SKILL_SETS["course_defense"] = COURSE_DEFENSE_SKILLS
 ```
 
-### 5.6 `registry.py` 中注册新工具
+同步在 `__init__.py` 的 `__all__` 中导出 `COURSE_DEFENSE_SKILLS`。
+
+### 5.7 `registry.py` 中注册新工具
+
+在 `_TOOL_FACTORIES` 列表**末尾**追加两行：
 
 ```python
-# service/tools/registry.py → _TOOL_FACTORIES 列表末尾追加
 from .knowledge_tools import create_teaching_rag_tool, create_combined_rag_tool
 
 _TOOL_FACTORIES = [
-    ...  # 原有工具
+    # ...原有条目不动...
     ("search_teaching_knowledge", create_teaching_rag_tool, ["knowledge_store"]),
     ("search_combined_knowledge", create_combined_rag_tool, ["knowledge_store"]),
 ]
 ```
 
-### 5.7 百炼控制台操作步骤
+### 5.8 百炼控制台操作步骤
 
 > ⚠️ 知识库必须在百炼控制台手动创建，代码无法自动建库
-> 这个需要老师和同学提供相关资料，负责人和代码协同开发人员有需要的话手动上传做测试，其中负责人（队长）手中要有齐全的知识库版本，其他开发人员不强求。
 
 1. 登录 [bailian.console.aliyun.com](https://bailian.console.aliyun.com)
 2. 「知识库」→「新建知识库」，创建**两个**库：
@@ -494,11 +511,69 @@ _TOOL_FACTORIES = [
    - 库 B：`teaching_materials`，Index ID 填入 `BAILOU_TEACHING_KB_ID`
 3. 库 A：上传 `knowledge_base/interview/` 目录下所有 `.txt` 文件
 4. 库 B：由老师上传课程 PPT、讲义 PDF、项目需求文档
-5. 两个库状态变为「就绪」后重启应用即可
+5. 两个库状态变为「就绪」后重启应用
+
+> 负责人（队长）手中要有齐全的知识库版本，其他开发人员不强求本地配置库 B，缺失时功能自动降级。
 
 ---
 
-## 6. 数据库结构说明
+## 6. 核心调用链
+
+> 供 AI 辅助开发时快速定位入口，防止改漏。
+
+### 6.1 面试流程调用链
+
+```
+UI/interview_panel.py
+  └─ InterviewWorker.on_start_requested()
+       └─ service/interview_engine.py :: InterviewEngine.start_session()
+       └─ InterviewEngine.get_first_question()
+            └─ OpenAI client (qwen-plus)
+
+  └─ InterviewWorker.on_answer_requested()
+       └─ InterviewEngine.submit_answer()
+            ├─ service/knowledge_store.py :: KnowledgeStore.retrieve_as_context()
+            │    └─ retrieve()  ← 任务 B 在此扩展 knowledge_type 参数
+            └─ service/evaluator.py :: AnswerEvaluator.evaluate()
+```
+
+### 6.2 AI 助手调用链
+
+```
+UI/agent_panel.py
+  └─ Agent.stream(user_input)          # service/agent_core.py
+       └─ OpenAI client (stream=True)
+            └─ 工具调用时：Agent._execute_tool()
+                 └─ service/tools/registry.py :: 对应工具函数
+                      └─ KnowledgeStore.retrieve()  ← 任务 B 扩展点
+```
+
+### 6.3 任务 A 注入点
+
+```
+UI/interview_panel.py :: _build_footer()
+  └─ [新增] voice_btn.clicked → _toggle_recording()
+       └─ threading.Thread
+            └─ service/voice.py :: record_audio() → stt()
+                 └─ [信号] _voice_signals.text_ready.emit(text)
+                      └─ answer_input.setPlainText(text)
+                           └─ [用户点发送] → 原有 _send_answer() 流程（不变）
+```
+
+### 6.4 知识库检索入口汇总
+
+**所有调用 `KnowledgeStore` 的地方**（任务 B 改完后需逐一检查兼容性）：
+
+| 调用方 | 调用方式 | 是否需要适配 |
+|--------|----------|-------------|
+| `interview_engine.py :: submit_answer()` | `retrieve_as_context()` | 否（包装方法，内部调 `retrieve()`，默认库 A） |
+| `tools/knowledge_tools.py :: search_knowledge_base` | `retrieve()` | 否（默认 INTERVIEW，兼容） |
+| `tools/knowledge_tools.py :: search_teaching_knowledge` | `retrieve(KnowledgeType.TEACHING)` | **任务 B 新增** |
+| `tools/knowledge_tools.py :: search_combined_knowledge` | `retrieve_combined()` | **任务 B 新增** |
+
+---
+
+## 7. 数据库结构说明
 
 ### 核心表
 
@@ -508,7 +583,7 @@ _TOOL_FACTORIES = [
 | `question_bank` | 本地种子题库 | `classify`, `level`, `content`, `answer` |
 | `student` | 学生信息 | `id`, `name`, `email` |
 | `interview_session` | 面试会话 | `student_id`, `job_position_id`, `status`, `overall_score`, `report` |
-| `interview_turn` | 每轮问答 | `session_id`, `turn_index`, `question_text`, `student_answer`, `scores`（JSON）, **`audio_path`** |
+| `interview_turn` | 每轮问答 | `session_id`, `turn_index`, `question_text`, `student_answer`, `scores`（JSON）, `audio_path` |
 | `knowledge_chunk` | 本地知识库分块（备用） | `job_position_id`, `source`, `chunk_text` |
 
 ### `audio_path` 字段
@@ -517,7 +592,7 @@ _TOOL_FACTORIES = [
 
 ---
 
-## 7. UI 组件规范
+## 8. UI 组件规范
 
 > ⚠️ **强制约定**：所有新增 UI 代码必须从 `UI/components.py` 引入主题色，禁止在面板文件中硬编码颜色值。
 
@@ -525,12 +600,13 @@ _TOOL_FACTORIES = [
 
 | 组件 | 用途 | 导入 |
 |------|------|------|
-| `Theme` (别名 `T`) | 颜色常量 | `from UI.components import Theme as T` |
+| `Theme`（别名 `T`） | 颜色常量 | `from UI.components import Theme as T` |
 | `ButtonFactory` | 按钮工厂（primary/solid/ghost/tag） | `from UI.components import ButtonFactory` |
 | `ChatBubble` | 聊天气泡（支持 Markdown 渲染） | `from UI.components import ChatBubble` |
 | `ScoreCardBubble` | 评分卡片（面试面板专用） | `from UI.components import ScoreCardBubble` |
 | `StatBadge` | 统计徽章 | `from UI.components import StatBadge` |
 | `TypingIndicator` | AI 打字等待动画 | `from UI.components import TypingIndicator` |
+| `StreamSignals` | 跨线程信号（流式输出用） | `from UI.components import StreamSignals` |
 | `GLOBAL_QSS` | 全局样式表 | `from UI.components import GLOBAL_QSS` |
 
 ### 新增面板检查清单
@@ -539,12 +615,12 @@ _TOOL_FACTORIES = [
 - [ ] `__init__` 中先调用 `self.setStyleSheet(GLOBAL_QSS + ...)`
 - [ ] 颜色全部用 `T.XXX`，不写字面量 `#xxxxxx`
 - [ ] 按钮全部用 `ButtonFactory.primary / solid / ghost`
-- [ ] 长列表必须用服务端分页（参考 `quiz_panel.py` 的 `PaginationBar`）
+- [ ] 长列表使用服务端分页（参考 `quiz_panel.py` 的 `PaginationBar`）
 - [ ] 后台耗时操作用 `threading.Thread` + `Signal` 回调，不阻塞主线程
 
 ---
 
-## 8. 工具权限体系（SkillSet）
+## 9. 工具权限体系（SkillSet）
 
 ### 现有权限集合
 
@@ -566,7 +642,7 @@ _TOOL_FACTORIES = [
 
 ---
 
-## 9. 开发与提交规范
+## 10. 开发与提交规范
 
 ### 分支策略
 
@@ -581,8 +657,8 @@ release_test      ← 发行前的测试版本
 ### Commit 格式
 
 ```
-feat(voice): 新增 service/voice.py STT 录音转文字 ** 或者 ** 直接语音交互模式的mode（即新增一个vioce_contect_core而不是新加功能）
-feat(kb): KnowledgeStore 支持双库检索
+feat(voice): 新增 service/voice.py STT 录音转文字
+feat(kb): KnowledgeStore 支持双库检索，新增 KnowledgeType 枚举
 fix(quiz): 修复分页跳转越界问题
 refactor(tools): 拆分 registry.py 工厂函数
 docs: 更新 README 双知识库配置说明
@@ -605,18 +681,18 @@ __pycache__/
 - [ ] 完成一次完整面试流程（选岗 → 回答 → 结束 → 报告）
 - [ ] 题库面板分页/排序/搜索正常
 - [ ] AI 助手工具调用正常
-- [ ] （任务 A）录音按钮 → STT → 文字填入输入框
-- [ ] （任务 B）两个知识库均可检索返回结果
+- [ ] （任务 A）录音按钮 → STT → 文字填入输入框，不阻塞主线程
+- [ ] （任务 B）两个知识库均可检索返回结果；`BAILOU_TEACHING_KB_ID` 缺失时程序不崩溃
 
 ---
 
-## 10. 常见问题 FAQ
+## 11. 常见问题 FAQ
 
 **Q: `torch` 版本冲突怎么解决？**
 先单独装：`pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cpu`，再装其余依赖。
 
 **Q: 启动报 `BAILOU_KNOWLEDGE_BASE_ID 未配置`？**
-检查 `.env` 文件是否存在且 Key 值非空，确认 `load_dotenv()` 在所有 `import service.*` 之前执行。
+检查 `.env` 文件是否存在且 Key 值非空，确认 `load_dotenv()` 在所有 `import service.*` 之前执行（见 `main.py` 顶部）。
 
 **Q: 面试官不出题 / 返回空字符串？**
 用 `curl` 测一下 `DASHSCOPE_API_KEY` 是否有效：
@@ -628,13 +704,16 @@ curl https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions \
 ```
 
 **Q: 录音没有声音 / `sounddevice` 报错？**
-确认麦克风系统权限已开启，或 `pip install sounddevice --upgrade`。Windows 上可能还需要 `pip install pyaudio`，更精确的解决方案是把代码仓库给claude然后让他给出解决方案。
+确认麦克风系统权限已开启，或 `pip install sounddevice --upgrade`。Windows 上可能还需要 `pip install pyaudio`。
 
 **Q: 博查搜索显示「⚠️ 未加载」？**
 `BOCHA_API_KEY` 未配置是正常现象，联网搜索工具会被跳过，不影响其他功能。
 
 **Q: 知识库检索一直返回「未找到相关内容」？**
 确认百炼控制台知识库状态为「就绪」，且已上传文档并完成索引（等待时间约 5-30 分钟）。
+
+**Q: 任务 B 改完后 `interview_engine.py` 里的知识库检索还正常吗？**
+正常。`interview_engine.py` 调用的是 `retrieve_as_context()`，该方法内部调用 `retrieve()` 时默认 `knowledge_type=KnowledgeType.INTERVIEW`，等同于原有行为，无需修改。
 
 **Q: `QComboBox` 下拉列表背景变黑？**
 `GLOBAL_QSS` 中已包含修复，确认每个面板的 `setStyleSheet` 调用了 `GLOBAL_QSS` 即可。
