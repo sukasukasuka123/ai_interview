@@ -49,7 +49,7 @@ def main():
 5. 联网搜索最新技术资料（使用 web_search）
 6. 查看学生历史面试表现（使用 get_student_interview_history）
 
-请用简洁、专业的中文回答。优先查询知识库，知识库没有时再联网搜索。
+请用简洁、专业的中文回答。优先查询知识库！知识库没有时再联网搜索。
 输出格式清晰，善用 Markdown 标题和列表。""",
     )
     tools = get_tools(db, ks)
