@@ -25,7 +25,9 @@ def get_question_difficulty(
         """
 
         LEVEL_ORDER = ["初级", "中级", "高级"]
-        current_idx = LEVEL_ORDER.index(current_level)
+        LEVEL_INDEX = {level: idx for idx, level in enumerate(LEVEL_ORDER)}
+        # 对于未知的 current_level，回退到默认的“中级”难度
+        current_idx = LEVEL_INDEX.get(current_level, LEVEL_INDEX["中级"])
 
         if overall >= 8:
             # 提升难度
