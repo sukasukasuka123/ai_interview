@@ -42,6 +42,8 @@ from .permissions import (
     ASSISTANT_SKILLS,
     ADMIN_SKILLS,
 )
+from .difficulty_tools import create_difficulty_tool
+
 
 
 def build_tools(
@@ -68,16 +70,17 @@ def build_tools(
         ("search_question_bank",          create_quiz_search_tool),
         ("get_student_interview_history", create_history_tool),
         ("get_student_id_by_name",        create_student_lookup_tool),
+        ("adjust_question_difficulty",    create_difficulty_tool), #根据评分调整题目难度工具
     ]
     for tool_name, factory in _db_factories:
         if db is None:
-            print(f"[Registry] ⚠️  {tool_name} 跳过：db 未传入")
+            print(f"[Registry] WARN: {tool_name} 跳过：db 未传入")
             continue
         try:
             result[tool_name] = factory(db)
-            print(f"[Registry] ✅ {tool_name}")
+            print(f"[Registry] OK: {tool_name}")
         except Exception as e:
-            print(f"[Registry] ⚠️  {tool_name} 加载失败：{e}")
+            print(f"[Registry] FAIL: {tool_name} 加载失败：{e}")
 
     # ── 知识库类工具 ──────────────────────────────────────────────────────────
     # 工厂函数签名：factory(kb: KnowledgeCore = None)
@@ -91,11 +94,11 @@ def build_tools(
             # kb_instance 为 None 时，工厂自动从 env 构造（若 env 也未配置则抛 ValueError 被捕获）
             result[tool_name] = factory(kb_instance)
             label = kb_instance.label if kb_instance else "auto-env"
-            print(f"[Registry] ✅ {tool_name} (kb={label!r})")
+            print(f"[Registry] OK: {tool_name} (kb={label!r})")
         except ValueError as e:
-            print(f"[Registry] ⚠️  {tool_name} 跳过：{e}")
+            print(f"[Registry] WARN: {tool_name} 跳过：{e}")
         except Exception as e:
-            print(f"[Registry] ⚠️  {tool_name} 加载失败：{e}")
+            print(f"[Registry] FAIL: {tool_name} 加载失败：{e}")
 
     # ── 联网搜索类工具 ────────────────────────────────────────────────────────
     _search_factories = [
@@ -105,9 +108,9 @@ def build_tools(
     for tool_name, factory in _search_factories:
         try:
             result[tool_name] = factory()
-            print(f"[Registry] ✅ {tool_name}")
+            print(f"[Registry] OK: {tool_name}")
         except Exception as e:
-            print(f"[Registry] ⚠️  {tool_name} 加载失败：{e}")
+            print(f"[Registry] FAIL: {tool_name} 加载失败：{e}")
 
     return result
 

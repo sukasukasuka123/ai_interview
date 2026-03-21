@@ -109,6 +109,9 @@ TOOL_RAG_DS_COURSE  = "search_ds_course"         # 数据结构课程库，Inter
 TOOL_WEB_SEARCH     = "web_search"
 TOOL_WIKIPEDIA      = "search_wikipedia"
 
+TOOL_DIFFICULTY_ADJUST = "adjust_question_difficulty" # 根据评分进行题目难度调整
+
+
 
 # ═══════════════════════════════════════════════════════════════════
 # ToolGroup 路由组
@@ -116,7 +119,7 @@ TOOL_WIKIPEDIA      = "search_wikipedia"
 
 COMMON_GROUP = ToolGroup(
     name="common",
-    tools=frozenset({TOOL_JOB_INFO, TOOL_QUIZ_DRAW, TOOL_QUIZ_STATS}),
+    tools=frozenset({TOOL_JOB_INFO, TOOL_QUIZ_DRAW, TOOL_QUIZ_STATS,TOOL_DIFFICULTY_ADJUST}),
 )
 
 QUIZ_GROUP = ToolGroup(
